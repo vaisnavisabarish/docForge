@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { analyzeRepository, AnalysisReport } from './scanner/repositoryScanner';
+import { analyzeProject } from './model/projectAnalyzer';
 
 export function activate(context: vscode.ExtensionContext) {
   const hello = vscode.commands.registerCommand('docforge.hello', () => {
@@ -13,63 +13,61 @@ export function activate(context: vscode.ExtensionContext) {
 
     output.appendLine('DOCFORGE PROJECT ANALYSIS');
 
-    let report: AnalysisReport | null = null;
-    try {
-      report = await analyzeRepository();
-    } catch (err) {
-      output.appendLine(`Analysis failed: ${String(err)}`);
-      return;
-    }
-
-    if (!report.workspacePath) {
+    const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+    if (!workspaceFolder) {
+      output.appendLine('');
       output.appendLine('No workspace is open.');
       return;
     }
 
-    output.appendLine('');
-    output.appendLine('Project');
-    output.appendLine(`- Workspace name: ${report.workspaceName ?? 'Unknown'}`);
-    output.appendLine(`- Workspace path: ${report.workspacePath}`);
-    output.appendLine('');
-    output.appendLine('Statistics');
-    output.appendLine(`- Files: ${report.totalFiles}`);
-    output.appendLine(`- Directories: ${report.totalDirs}`);
-    output.appendLine('');
-    output.appendLine('File Types');
-    for (const [ext, count] of Object.entries(report.extensions)) {
-      output.appendLine(`- ${ext || '<no ext>'}: ${count}`);
-    }
-    output.appendLine('');
-    output.appendLine('Languages');
-    for (const [lang, count] of Object.entries(report.languageCounts)) {
-      output.appendLine(`- ${lang}: ${count}`);
-    }
-    output.appendLine('');
-    output.appendLine('Entry Point Candidates');
-    if (report.entryPointCandidates.length === 0) {
-      output.appendLine('- (none detected)');
-    } else {
-      for (const e of report.entryPointCandidates) output.appendLine(`- ${e}`);
-    }
-    output.appendLine('');
-    output.appendLine('Dependencies');
-    if (!report.dependencies && !report.devDependencies) {
-      output.appendLine('- (no package.json found or no dependencies)');
-    } else {
-      if (report.dependencies) {
-        output.appendLine('- dependencies:');
-        for (const [k, v] of Object.entries(report.dependencies)) output.appendLine(`  - ${k}: ${v}`);
-      }
-      if (report.devDependencies) {
-        output.appendLine('- devDependencies:');
-        for (const [k, v] of Object.entries(report.devDependencies)) output.appendLine(`  - ${k}: ${v}`);
-      }
-    }
+    const workspacePath = workspaceFolder.uri.fsPath;
 
-    if (report.errors.length) {
+    try {
+      const model = await analyzeProject(workspacePath);
+
       output.appendLine('');
-      output.appendLine('Non-fatal errors encountered:');
-      for (const e of report.errors) output.appendLine(`- ${e}`);
+      output.appendLine('Project');
+      output.appendLine(`- Workspace name: ${model.workspaceName}`);
+      output.appendLine(`- Workspace path: ${model.workspacePath}`);
+
+      output.appendLine('');
+      output.appendLine('Source Files');
+      if (model.files.length === 0) {
+        output.appendLine('- (none parsed)');
+      } else {
+        for (const file of model.files) {
+          output.appendLine(`- File: ${file.path}`);
+          output.appendLine(`  Language: ${file.language}`);
+          output.appendLine(`  Functions: ${file.functions.length > 0 ? file.functions.join(', ') : '(none)'}`);
+          output.appendLine(`  Classes: ${file.classes.length > 0 ? file.classes.join(', ') : '(none)'}`);
+          output.appendLine(`  Methods: ${file.methods.length > 0 ? file.methods.join(', ') : '(none)'}`);
+          output.appendLine(`  Imports: ${file.imports.length > 0 ? file.imports.join(', ') : '(none)'}`);
+          output.appendLine(`  Exports: ${file.exports.length > 0 ? file.exports.join(', ') : '(none)'}`);
+        }
+      }
+
+      output.appendLine('');
+      output.appendLine('Dependencies');
+      if (Object.keys(model.dependencies).length === 0) {
+        output.appendLine('- (none)');
+      } else {
+        for (const [name, version] of Object.entries(model.dependencies)) {
+          output.appendLine(`- ${name}: ${version}`);
+        }
+      }
+
+      output.appendLine('');
+      output.appendLine('Dev Dependencies');
+      if (Object.keys(model.devDependencies).length === 0) {
+        output.appendLine('- (none)');
+      } else {
+        for (const [name, version] of Object.entries(model.devDependencies)) {
+          output.appendLine(`- ${name}: ${version}`);
+        }
+      }
+    } catch (err) {
+      output.appendLine('');
+      output.appendLine(`Analysis failed: ${String(err)}`);
     }
   });
 
