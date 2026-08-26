@@ -9,32 +9,37 @@ export interface JavaScriptStructure {
   exports: string[];
 }
 
+type SupportedLanguage = 'javascript' | 'typescript' | 'tsx';
+
 const moduleResolver = createRequire(__filename);
-const javascriptGrammarPath = moduleResolver.resolve('tree-sitter-javascript/tree-sitter-javascript.wasm');
+const grammarPaths: Record<SupportedLanguage, string> = {
+  javascript: moduleResolver.resolve('tree-sitter-javascript/tree-sitter-javascript.wasm'),
+  typescript: moduleResolver.resolve('tree-sitter-typescript/tree-sitter-typescript.wasm'),
+  tsx: moduleResolver.resolve('tree-sitter-typescript/tree-sitter-tsx.wasm')
+};
 
-let parserPromise: Promise<Parser> | undefined;
+const parserPromises: Record<SupportedLanguage, Promise<Parser>> = {} as any;
 
-async function getParser(): Promise<Parser> {
-  if (!parserPromise) {
-    parserPromise = (async () => {
+async function getParser(language: SupportedLanguage): Promise<Parser> {
+  if (!parserPromises[language]) {
+    parserPromises[language] = (async () => {
       await Parser.init();
-      const language = await Language.load(javascriptGrammarPath);
+      const grammarLanguage = await Language.load(grammarPaths[language]);
       const parser = new Parser();
-      parser.setLanguage(language);
+      parser.setLanguage(grammarLanguage);
       return parser;
     })();
   }
 
-  return parserPromise;
+  return parserPromises[language];
 }
 
 function nodeName(node: Node): string {
   return node.childForFieldName('name')?.text ?? node.text;
 }
 
-/** Parse JavaScript source and return its top-level structural elements. */
-export async function parseJavaScript(source: string): Promise<JavaScriptStructure> {
-  const parser = await getParser();
+async function extractStructure(source: string, language: SupportedLanguage): Promise<JavaScriptStructure> {
+  const parser = await getParser(language);
   const tree = parser.parse(source);
 
   if (!tree) {
@@ -63,4 +68,17 @@ export async function parseJavaScript(source: string): Promise<JavaScriptStructu
   } finally {
     tree.delete();
   }
+}
+
+/** Parse source code in the specified language and return its structural elements. */
+export async function parseSource(
+  source: string,
+  language: 'javascript' | 'typescript' | 'tsx'
+): Promise<JavaScriptStructure> {
+  return extractStructure(source, language);
+}
+
+/** Parse JavaScript source and return its top-level structural elements. */
+export async function parseJavaScript(source: string): Promise<JavaScriptStructure> {
+  return parseSource(source, 'javascript');
 }
