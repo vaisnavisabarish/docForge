@@ -22,3 +22,13 @@ export interface SourceFileModel {
   resolvedImports: string[];
   exports: string[];
 }
+export interface ProjectSummary {
+  totalFiles: number;
+  languageCounts: Record<string, number>;
+  entryPoints: string[];
+  classes: string[];
+  functions: string[];
+  dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
+  dependencyRelationships: ProjectDependency[];
+}
