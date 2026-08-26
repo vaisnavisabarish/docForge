@@ -1,9 +1,14 @@
 {
   "name": "docforge",
   "displayName": "DocForge",
-  "description": "AI-powered developer documentation and code explanation (scaffold).",
+  "description": "AI-powered developer documentation and code explanation.",
   "version": "0.0.1",
   "publisher": "your-name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vaisnavisabarish/docForge.git"
+  },
+  "license": "MIT",
   "engines": {
     "vscode": "^1.78.0"
   },
@@ -20,7 +25,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
     "watch": "tsc -w -p .",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./run-tests.js"
   },
   "devDependencies": {
     "@types/node": "^18.16.0",

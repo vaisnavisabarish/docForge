@@ -68,7 +68,7 @@ export function buildDocumentationAiRequest(
     '',
     'Generate documentation explanations using ONLY the supplied project facts.',
     'Never invent files, functions, classes, dependencies, behavior, architecture, or technologies.',
-    'You may infer a reasonable purpose from explicit names and relationships, but do not claim behavior that cannot be supported by the supplied facts.',
+    'Do not infer runtime behavior, UI behavior, business logic, entry-point status, or file purpose unless the supplied facts explicitly establish it.',
     '',
     `Project: ${project.workspaceName}`,
     '',
@@ -127,9 +127,11 @@ export function buildDocumentationAiRequest(
     '- Keep descriptions concise and developer-friendly.',
     '- Do not include dependency lists inside file descriptions.',
     '- Do not invent class methods or function behavior.',
-    '- The architecture explanation must be based on the supplied dependency graph.',
-    '- The setup explanation must be based on the supplied package dependencies.'
-  ].join('\n');
+    '- Treat file names, function names, and dependency relationships as structural facts, not proof of runtime behavior.',
+    '- Do not claim that a function renders, displays, initializes, authenticates, fetches, stores, calculates, or performs any other behavior unless that behavior is explicitly present in the supplied facts.',
+    '- If the supplied facts are insufficient to determine a purpose or behavior, explicitly say that the available project facts are insufficient.',
+    '- The architecture explanation must be based only on the supplied dependency graph and file facts.',
+    '- The setup explanation must be based on the supplied package dependencies.'  ].join('\n');
 
   return {
     projectName: project.workspaceName,
@@ -286,16 +288,12 @@ export function applyAiDocumentation(
 
       return {
         ...file,
-        purpose: aiFile.purpose,
+        purpose: file.purpose,
         functions: file.functions.map(fn => ({
-          ...fn,
-          description:
-            aiFile.functions[fn.name] ?? fn.description
+          ...fn
         })),
         classes: file.classes.map(cls => ({
-          ...cls,
-          description:
-            aiFile.classes[cls.name] ?? cls.description
+          ...cls
         }))
       };
     })

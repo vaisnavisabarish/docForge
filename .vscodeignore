@@ -1,0 +1,15 @@
+﻿.vscode/**
+.git/**
+.github/**
+src/**
+test/**
+tests/**
+*.ts
+tsconfig.json
+coverage/**
+.nyc_output/**
+*.vsix
+README.md
+npm-debug.log*
+run-tests.js
+out/test/**
