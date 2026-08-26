@@ -2,8 +2,10 @@ import * as vscode from 'vscode';
 import { analyzeProject } from './model/projectAnalyzer';
 import { generateDocumentation } from './documentation/documentationGenerator';
 import { writeMarkdownDocumentation } from './documentation/markdownRenderer';
-import { buildDocumentationAiRequest } from './ai/documentationAi';
-import { generateWithLanguageModel } from './ai/languageModel';
+import {
+  generateAiDocumentation,
+  applyAiDocumentation
+} from './ai/documentationAi';
 
 export function activate(context: vscode.ExtensionContext) {
   const hello = vscode.commands.registerCommand('docforge.hello', () => {
@@ -28,7 +30,9 @@ export function activate(context: vscode.ExtensionContext) {
       output.appendLine('');
 
       try {
-        const project = await analyzeProject(workspaceFolder.uri.fsPath);
+        const project = await analyzeProject(
+          workspaceFolder.uri.fsPath
+        );
 
         output.appendLine('Project');
         output.appendLine(`- Workspace name: ${project.workspaceName}`);
@@ -127,7 +131,31 @@ export function activate(context: vscode.ExtensionContext) {
 
         output.appendLine('Building documentation model...');
 
-        const documentation = generateDocumentation(project);
+        let documentation = generateDocumentation(project);
+
+        output.appendLine('Requesting AI documentation...');
+
+        try {
+          const aiDocumentation =
+            await generateAiDocumentation(project);
+
+          documentation = applyAiDocumentation(
+            documentation,
+            aiDocumentation
+          );
+
+          output.appendLine(
+            'AI documentation applied successfully.'
+          );
+        } catch (aiError) {
+          output.appendLine(
+            `AI documentation unavailable: ${String(aiError)}`
+          );
+
+          output.appendLine(
+            'Continuing with deterministic documentation.'
+          );
+        }
 
         output.appendLine('Rendering Markdown...');
 
@@ -137,7 +165,9 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
         output.appendLine('');
-        output.appendLine('Documentation generated successfully.');
+        output.appendLine(
+          'Documentation generated successfully.'
+        );
         output.appendLine(`Output: ${outputPath}`);
 
         const action = await vscode.window.showInformationMessage(
@@ -146,9 +176,10 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
         if (action === 'Open Documentation') {
-          const document = await vscode.workspace.openTextDocument(
-            vscode.Uri.file(outputPath)
-          );
+          const document =
+            await vscode.workspace.openTextDocument(
+              vscode.Uri.file(outputPath)
+            );
 
           await vscode.window.showTextDocument(document);
         }
@@ -165,65 +196,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  const testAi = vscode.commands.registerCommand(
-    'docforge.testAI',
-    async () => {
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-
-      if (!workspaceFolder) {
-        vscode.window.showErrorMessage(
-          'DocForge: No workspace is open.'
-        );
-        return;
-      }
-
-      const output = vscode.window.createOutputChannel('DocForge');
-      output.clear();
-      output.show(true);
-
-      output.appendLine('DOCFORGE AI TEST');
-      output.appendLine('');
-      output.appendLine('Analyzing project...');
-
-      try {
-        const project = await analyzeProject(
-          workspaceFolder.uri.fsPath
-        );
-
-        const request = buildDocumentationAiRequest(project);
-
-        output.appendLine('Requesting language model...');
-
-        const result = await generateWithLanguageModel(
-          request.prompt
-        );
-
-        output.appendLine('');
-        output.appendLine('AI RESPONSE');
-        output.appendLine('============');
-        output.appendLine(result);
-
-        const document = await vscode.workspace.openTextDocument({
-          content: result,
-          language: 'markdown'
-        });
-
-        await vscode.window.showTextDocument(document);
-      } catch (error) {
-        output.appendLine('');
-        output.appendLine(`AI test failed: ${String(error)}`);
-
-        vscode.window.showErrorMessage(
-          `DocForge AI test failed: ${String(error)}`
-        );
-      }
-    }
-  );
-
   context.subscriptions.push(
     hello,
     analyze,
-    generate,
-    testAi
+    generate
   );
 }

@@ -1,8 +1,24 @@
 import { ProjectModel } from '../model/projectModel';
+import { DocumentationModel } from '../documentation/documentationModel';
+import { generateWithLanguageModel } from './languageModel';
 
 export interface DocumentationAiRequest {
   projectName: string;
   prompt: string;
+}
+
+export interface AiFileDocumentation {
+  path: string;
+  purpose: string;
+  functions: Record<string, string>;
+  classes: Record<string, string>;
+}
+
+export interface AiDocumentationContent {
+  overview: string;
+  architecture: string;
+  setup: string;
+  files: AiFileDocumentation[];
 }
 
 export function buildDocumentationAiRequest(
@@ -10,14 +26,13 @@ export function buildDocumentationAiRequest(
 ): DocumentationAiRequest {
   const fileSummaries = project.files.map(file => {
     const functions =
-      file.functions.length > 0
-        ? file.functions.join(', ')
-        : '(none)';
+      file.functions.length > 0 ? file.functions.join(', ') : '(none)';
 
     const classes =
-      file.classes.length > 0
-        ? file.classes.join(', ')
-        : '(none)';
+      file.classes.length > 0 ? file.classes.join(', ') : '(none)';
+
+    const methods =
+      file.methods.length > 0 ? file.methods.join(', ') : '(none)';
 
     const imports =
       file.resolvedImports.length > 0
@@ -29,6 +44,7 @@ export function buildDocumentationAiRequest(
       `Language: ${file.language}`,
       `Functions: ${functions}`,
       `Classes: ${classes}`,
+      `Methods: ${methods}`,
       `Resolved internal dependencies: ${imports}`
     ].join('\n');
   });
@@ -50,20 +66,22 @@ export function buildDocumentationAiRequest(
   const prompt = [
     'You are DocForge, a software documentation assistant.',
     '',
-    'Your task is to explain a software project using only the supplied project facts.',
-    'Do not invent files, functions, classes, dependencies, behavior, or architecture.',
-    'If the supplied information is insufficient to determine something, say so.',
-    'Write concise, developer-friendly documentation.',
+    'Generate documentation explanations using ONLY the supplied project facts.',
+    'Never invent files, functions, classes, dependencies, behavior, architecture, or technologies.',
+    'You may infer a reasonable purpose from explicit names and relationships, but do not claim behavior that cannot be supported by the supplied facts.',
     '',
     `Project: ${project.workspaceName}`,
     '',
-    'Source files:',
+    'SOURCE FILE FACTS',
+    '=================',
     fileSummaries.join('\n\n'),
     '',
-    'Dependency graph:',
+    'DEPENDENCY GRAPH',
+    '================',
     dependencyGraph,
     '',
-    'Package dependencies:',
+    'PACKAGE DEPENDENCIES',
+    '====================',
     dependencies,
     '',
     'Generate:',
@@ -73,12 +91,213 @@ export function buildDocumentationAiRequest(
     '4. Useful descriptions of detected functions and classes.',
     '5. A short setup/dependency explanation.',
     '',
-    'Do not output Markdown headings.',
-    'Return plain text that DocForge can insert into its documentation model.'
+    'Return ONLY valid JSON.',
+    'Do not use Markdown code fences.',
+    'Do not include commentary before or after the JSON.',
+    '',
+    'The architecture field must explain the supplied dependency graph in prose.',
+    'DocForge will separately preserve the exact dependency relationships.',
+    '',
+    'The JSON must have exactly this structure:',
+    '{',
+    '  "overview": "string",',
+    '  "architecture": "string",',
+    '  "setup": "string",',
+    '  "files": [',
+    '    {',
+    '      "path": "exact source file path",',
+    '      "purpose": "string",',
+    '      "functions": {',
+    '        "functionName": "description"',
+    '      },',
+    '      "classes": {',
+    '        "className": "description"',
+    '      }',
+    '    }',
+    '  ]',
+    '}',
+    '',
+    'Rules:',
+    '- Include every supplied source file exactly once.',
+    '- Preserve every file path exactly as supplied.',
+    '- Include every detected function in its file.',
+    '- Include every detected class in its file.',
+    '- If a file has no functions, return an empty functions object.',
+    '- If a file has no classes, return an empty classes object.',
+    '- Keep descriptions concise and developer-friendly.',
+    '- Do not include dependency lists inside file descriptions.',
+    '- Do not invent class methods or function behavior.',
+    '- The architecture explanation must be based on the supplied dependency graph.',
+    '- The setup explanation must be based on the supplied package dependencies.'
   ].join('\n');
 
   return {
     projectName: project.workspaceName,
     prompt
+  };
+}
+
+function stripMarkdownCodeFence(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed.startsWith('```')) {
+    return trimmed;
+  }
+
+  return trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function validateAiDocumentation(
+  value: unknown,
+  project: ProjectModel
+): AiDocumentationContent {
+  if (!value || typeof value !== 'object') {
+    throw new Error('AI returned an invalid documentation object.');
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (
+    typeof candidate.overview !== 'string' ||
+    typeof candidate.architecture !== 'string' ||
+    typeof candidate.setup !== 'string' ||
+    !Array.isArray(candidate.files)
+  ) {
+    throw new Error('AI documentation response has an invalid structure.');
+  }
+
+  const filesByPath = new Map(
+    project.files.map(file => [file.path, file])
+  );
+
+  const aiFiles: AiFileDocumentation[] = [];
+
+  for (const fileValue of candidate.files) {
+    if (!fileValue || typeof fileValue !== 'object') {
+      continue;
+    }
+
+    const file = fileValue as Record<string, unknown>;
+
+    if (typeof file.path !== 'string') {
+      continue;
+    }
+
+    const projectFile = filesByPath.get(file.path);
+
+    if (!projectFile) {
+      continue;
+    }
+
+    const functions =
+      file.functions && typeof file.functions === 'object'
+        ? Object.fromEntries(
+            Object.entries(file.functions as Record<string, unknown>)
+              .filter(
+                ([name, description]) =>
+                  projectFile.functions.includes(name) &&
+                  typeof description === 'string'
+              )
+              .map(([name, description]) => [
+                name,
+                description as string
+              ])
+          )
+        : {};
+
+    const classes =
+      file.classes && typeof file.classes === 'object'
+        ? Object.fromEntries(
+            Object.entries(file.classes as Record<string, unknown>)
+              .filter(
+                ([name, description]) =>
+                  projectFile.classes.includes(name) &&
+                  typeof description === 'string'
+              )
+              .map(([name, description]) => [
+                name,
+                description as string
+              ])
+          )
+        : {};
+
+    aiFiles.push({
+      path: file.path,
+      purpose:
+        typeof file.purpose === 'string'
+          ? file.purpose
+          : `Source file containing ${projectFile.language} code.`,
+      functions,
+      classes
+    });
+  }
+
+  return {
+    overview: candidate.overview,
+    architecture: candidate.architecture,
+    setup: candidate.setup,
+    files: aiFiles
+  };
+}
+
+export async function generateAiDocumentation(
+  project: ProjectModel
+): Promise<AiDocumentationContent> {
+  const request = buildDocumentationAiRequest(project);
+  const response = await generateWithLanguageModel(request.prompt);
+
+  const cleanedResponse = stripMarkdownCodeFence(response);
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(cleanedResponse);
+  } catch {
+    throw new Error(
+      'The AI returned a response that was not valid JSON.'
+    );
+  }
+
+  return validateAiDocumentation(parsed, project);
+}
+
+export function applyAiDocumentation(
+  documentation: DocumentationModel,
+  aiDocumentation: AiDocumentationContent
+): DocumentationModel {
+  const aiFiles = new Map(
+    aiDocumentation.files.map(file => [file.path, file])
+  );
+
+  return {
+    ...documentation,
+    overview: aiDocumentation.overview,
+    architecture: aiDocumentation.architecture,
+    setup: aiDocumentation.setup,
+    files: documentation.files.map(file => {
+      const aiFile = aiFiles.get(file.path);
+
+      if (!aiFile) {
+        return file;
+      }
+
+      return {
+        ...file,
+        purpose: aiFile.purpose,
+        functions: file.functions.map(fn => ({
+          ...fn,
+          description:
+            aiFile.functions[fn.name] ?? fn.description
+        })),
+        classes: file.classes.map(cls => ({
+          ...cls,
+          description:
+            aiFile.classes[cls.name] ?? cls.description
+        }))
+      };
+    })
   };
 }

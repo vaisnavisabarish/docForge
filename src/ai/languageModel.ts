@@ -3,13 +3,22 @@ import * as vscode from 'vscode';
 export async function generateWithLanguageModel(
   prompt: string
 ): Promise<string> {
-  const models = await vscode.lm.selectChatModels({
-    vendor: 'copilot'
-  });
+  let models: vscode.LanguageModelChat[] = [];
+
+  try {
+    // Do not require a specific paid provider.
+    // If VS Code has any usable language model available,
+    // DocForge can attempt to use it.
+    models = await vscode.lm.selectChatModels();
+  } catch (error) {
+    throw new Error(
+      `No language model is available to DocForge: ${String(error)}`
+    );
+  }
 
   if (models.length === 0) {
     throw new Error(
-      'No Copilot language model is available. Make sure GitHub Copilot is installed, signed in, and available in this VS Code window.'
+      'No language model is currently available. AI enhancement will be skipped.'
     );
   }
 
@@ -23,7 +32,8 @@ export async function generateWithLanguageModel(
     vscode.LanguageModelChatMessage.User(prompt)
   ];
 
-  const cancellation = new vscode.CancellationTokenSource();
+  const cancellation =
+    new vscode.CancellationTokenSource();
 
   try {
     const response = await model.sendRequest(

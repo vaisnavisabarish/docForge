@@ -2,15 +2,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DocumentationModel } from './documentationModel';
 
-function formatList(items: string[]): string {
-  if (items.length === 0) {
-    return '- None detected';
-  }
-
-  return items.map(item => `- ${item}`).join('\n');
-}
-
-export function renderMarkdown(documentation: DocumentationModel): string {
+export function renderMarkdown(
+  documentation: DocumentationModel
+): string {
   const lines: string[] = [];
 
   lines.push(`# ${documentation.projectName}`);
@@ -23,13 +17,24 @@ export function renderMarkdown(documentation: DocumentationModel): string {
 
   lines.push('## Architecture');
   lines.push('');
+  lines.push(documentation.architecture);
+  lines.push('');
 
-  if (documentation.architecture.trim()) {
-    lines.push('```text');
-    lines.push(documentation.architecture);
-    lines.push('```');
-  } else {
+  lines.push('### Dependency Graph');
+  lines.push('');
+
+  const dependencyLines = documentation.files.flatMap(file =>
+    file.dependencies.map(
+      dependency => `${file.path} -> ${dependency}`
+    )
+  );
+
+  if (dependencyLines.length === 0) {
     lines.push('No internal file dependencies detected.');
+  } else {
+    lines.push('```text');
+    lines.push(...dependencyLines);
+    lines.push('```');
   }
 
   lines.push('');
@@ -41,11 +46,6 @@ export function renderMarkdown(documentation: DocumentationModel): string {
 
   lines.push('## Files');
   lines.push('');
-
-  if (documentation.files.length === 0) {
-    lines.push('No supported source files detected.');
-    lines.push('');
-  }
 
   for (const file of documentation.files) {
     lines.push(`### ${file.path}`);
@@ -59,8 +59,8 @@ export function renderMarkdown(documentation: DocumentationModel): string {
     if (file.functions.length === 0) {
       lines.push('- None detected');
     } else {
-      for (const func of file.functions) {
-        lines.push(`- **${func.name}** - ${func.description}`);
+      for (const fn of file.functions) {
+        lines.push(`- **${fn.name}** - ${fn.description}`);
       }
     }
 
@@ -75,8 +75,11 @@ export function renderMarkdown(documentation: DocumentationModel): string {
       for (const cls of file.classes) {
         lines.push(`- **${cls.name}** - ${cls.description}`);
 
-        for (const method of cls.methods) {
-          lines.push(`  - Method: \`${method}\``);
+        if (cls.methods.length > 0) {
+          lines.push('  - Methods:');
+          for (const method of cls.methods) {
+            lines.push(`    - ${method}`);
+          }
         }
       }
     }
@@ -85,21 +88,37 @@ export function renderMarkdown(documentation: DocumentationModel): string {
 
     lines.push('#### Dependencies');
     lines.push('');
-    lines.push(formatList(file.dependencies));
+
+    if (file.dependencies.length === 0) {
+      lines.push('- None detected');
+    } else {
+      for (const dependency of file.dependencies) {
+        lines.push(`- ${dependency}`);
+      }
+    }
+
     lines.push('');
   }
 
-  return lines.join('\n');
+  return lines.join('\n').trimEnd() + '\n';
 }
 
 export async function writeMarkdownDocumentation(
-  projectRoot: string,
+  rootPath: string,
   documentation: DocumentationModel
 ): Promise<string> {
-  const outputPath = path.join(projectRoot, 'README.docforge.md');
+  const outputPath = path.join(
+    rootPath,
+    'README.docforge.md'
+  );
+
   const markdown = renderMarkdown(documentation);
 
-  await fs.writeFile(outputPath, markdown, 'utf8');
+  await fs.writeFile(
+    outputPath,
+    markdown,
+    'utf8'
+  );
 
   return outputPath;
 }
