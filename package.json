@@ -13,7 +13,8 @@
   "activationEvents": [
     "onCommand:docforge.hello",
     "onCommand:docforge.analyzeProject",
-    "onCommand:docforge.generateDocumentation"
+    "onCommand:docforge.generateDocumentation",
+    "onCommand:docforge.testAI"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -40,6 +41,10 @@
       {
         "command": "docforge.generateDocumentation",
         "title": "DocForge: Generate Documentation"
+      },
+      {
+        "command": "docforge.testAI",
+        "title": "DocForge: Test AI"
       }
     ]
   },
