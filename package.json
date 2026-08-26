@@ -12,7 +12,8 @@
   ],
   "activationEvents": [
     "onCommand:docforge.hello",
-    "onCommand:docforge.analyzeProject"
+    "onCommand:docforge.analyzeProject",
+    "onCommand:docforge.generateDocumentation"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -35,6 +36,10 @@
       {
         "command": "docforge.analyzeProject",
         "title": "DocForge: Analyze Project"
+      },
+      {
+        "command": "docforge.generateDocumentation",
+        "title": "DocForge: Generate Documentation"
       }
     ]
   },

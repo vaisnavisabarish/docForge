@@ -1,77 +1,170 @@
 import * as vscode from 'vscode';
 import { analyzeProject } from './model/projectAnalyzer';
+import { generateDocumentation } from './documentation/documentationGenerator';
+import { writeMarkdownDocumentation } from './documentation/markdownRenderer';
 
 export function activate(context: vscode.ExtensionContext) {
   const hello = vscode.commands.registerCommand('docforge.hello', () => {
     vscode.window.showInformationMessage('DocForge is ready.');
   });
 
-  const analyze = vscode.commands.registerCommand('docforge.analyzeProject', async () => {
-    const output = vscode.window.createOutputChannel('DocForge');
-    output.clear();
-    output.show(true);
+  const analyze = vscode.commands.registerCommand(
+    'docforge.analyzeProject',
+    async () => {
+      const output = vscode.window.createOutputChannel('DocForge');
+      output.clear();
+      output.show(true);
 
-    output.appendLine('DOCFORGE PROJECT ANALYSIS');
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 
-    const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
-    if (!workspaceFolder) {
+      if (!workspaceFolder) {
+        output.appendLine('No workspace is open.');
+        return;
+      }
+
+      output.appendLine('DOCFORGE PROJECT ANALYSIS');
       output.appendLine('');
-      output.appendLine('No workspace is open.');
-      return;
+
+      try {
+        const project = await analyzeProject(workspaceFolder.uri.fsPath);
+
+        output.appendLine('Project');
+        output.appendLine(`- Workspace name: ${project.workspaceName}`);
+        output.appendLine(`- Workspace path: ${project.workspacePath}`);
+        output.appendLine('');
+
+        output.appendLine('Source Files');
+        if (project.files.length === 0) {
+          output.appendLine('- No supported source files detected.');
+        } else {
+          for (const file of project.files) {
+            output.appendLine(`- ${file.path}`);
+            output.appendLine(`  Language: ${file.language}`);
+            output.appendLine(
+              `  Functions: ${
+                file.functions.length > 0
+                  ? file.functions.join(', ')
+                  : '(none)'
+              }`
+            );
+            output.appendLine(
+              `  Classes: ${
+                file.classes.length > 0
+                  ? file.classes.join(', ')
+                  : '(none)'
+              }`
+            );
+            output.appendLine(
+              `  Dependencies: ${
+                file.resolvedImports.length > 0
+                  ? file.resolvedImports.join(', ')
+                  : '(none)'
+              }`
+            );
+          }
+        }
+
+        output.appendLine('');
+        output.appendLine('Dependencies');
+
+        const dependencies = Object.entries(project.dependencies);
+
+        if (dependencies.length === 0) {
+          output.appendLine('- (none)');
+        } else {
+          for (const [name, version] of dependencies) {
+            output.appendLine(`- ${name}: ${version}`);
+          }
+        }
+
+        output.appendLine('');
+        output.appendLine('Dependency Graph');
+
+        if (project.dependencyGraph.length === 0) {
+          output.appendLine('- No internal dependencies detected.');
+        } else {
+          for (const edge of project.dependencyGraph) {
+            output.appendLine(`- ${edge.from} -> ${edge.to}`);
+          }
+        }
+      } catch (error) {
+        output.appendLine(`Analysis failed: ${String(error)}`);
+      }
     }
+  );
 
-    const workspacePath = workspaceFolder.uri.fsPath;
+  const generate = vscode.commands.registerCommand(
+    'docforge.generateDocumentation',
+    async () => {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 
-    try {
-      const model = await analyzeProject(workspacePath);
-
-      output.appendLine('');
-      output.appendLine('Project');
-      output.appendLine(`- Workspace name: ${model.workspaceName}`);
-      output.appendLine(`- Workspace path: ${model.workspacePath}`);
-
-      output.appendLine('');
-      output.appendLine('Source Files');
-      if (model.files.length === 0) {
-        output.appendLine('- (none parsed)');
-      } else {
-        for (const file of model.files) {
-          output.appendLine(`- File: ${file.path}`);
-          output.appendLine(`  Language: ${file.language}`);
-          output.appendLine(`  Functions: ${file.functions.length > 0 ? file.functions.join(', ') : '(none)'}`);
-          output.appendLine(`  Classes: ${file.classes.length > 0 ? file.classes.join(', ') : '(none)'}`);
-          output.appendLine(`  Methods: ${file.methods.length > 0 ? file.methods.join(', ') : '(none)'}`);
-          output.appendLine(`  Imports: ${file.imports.length > 0 ? file.imports.join(', ') : '(none)'}`);
-          output.appendLine(`  Exports: ${file.exports.length > 0 ? file.exports.join(', ') : '(none)'}`);
-        }
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage(
+          'DocForge: No workspace is open.'
+        );
+        return;
       }
 
-      output.appendLine('');
-      output.appendLine('Dependencies');
-      if (Object.keys(model.dependencies).length === 0) {
-        output.appendLine('- (none)');
-      } else {
-        for (const [name, version] of Object.entries(model.dependencies)) {
-          output.appendLine(`- ${name}: ${version}`);
-        }
-      }
+      const output = vscode.window.createOutputChannel('DocForge');
+      output.clear();
+      output.show(true);
 
+      output.appendLine('DOCFORGE DOCUMENTATION GENERATION');
       output.appendLine('');
-      output.appendLine('Dev Dependencies');
-      if (Object.keys(model.devDependencies).length === 0) {
-        output.appendLine('- (none)');
-      } else {
-        for (const [name, version] of Object.entries(model.devDependencies)) {
-          output.appendLine(`- ${name}: ${version}`);
+      output.appendLine('Analyzing project...');
+
+      try {
+        const project = await analyzeProject(
+          workspaceFolder.uri.fsPath
+        );
+
+        output.appendLine(
+          `Found ${project.files.length} supported source files.`
+        );
+
+        output.appendLine('Building documentation model...');
+
+        const documentation = generateDocumentation(project);
+
+        output.appendLine('Rendering Markdown...');
+
+        const outputPath = await writeMarkdownDocumentation(
+          workspaceFolder.uri.fsPath,
+          documentation
+        );
+
+        output.appendLine('');
+        output.appendLine('Documentation generated successfully.');
+        output.appendLine(`Output: ${outputPath}`);
+
+        const action = await vscode.window.showInformationMessage(
+          'DocForge documentation generated.',
+          'Open Documentation'
+        );
+
+        if (action === 'Open Documentation') {
+          const document = await vscode.workspace.openTextDocument(
+            vscode.Uri.file(outputPath)
+          );
+
+          await vscode.window.showTextDocument(document);
         }
+      } catch (error) {
+        output.appendLine('');
+        output.appendLine(
+          `Documentation generation failed: ${String(error)}`
+        );
+
+        vscode.window.showErrorMessage(
+          `DocForge: Documentation generation failed.`
+        );
       }
-    } catch (err) {
-      output.appendLine('');
-      output.appendLine(`Analysis failed: ${String(err)}`);
     }
-  });
+  );
 
-  context.subscriptions.push(hello, analyze);
+  context.subscriptions.push(
+    hello,
+    analyze,
+    generate
+  );
 }
-
-export function deactivate() {}
